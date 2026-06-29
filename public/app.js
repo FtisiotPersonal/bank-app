@@ -101,18 +101,19 @@ async function selectAccount(id) {
     </div>`;
 
   try {
-    const [account, transactions] = await Promise.all([
+    const [account, transactions, { delta }] = await Promise.all([
       api.get(`/accounts/${id}`),
       api.get(`/accounts/${id}/transactions`),
+      api.get(`/accounts/${id}/balance-delta`),
     ]);
-    renderDetail(account, transactions);
+    renderDetail(account, transactions, delta);
   } catch {
     toast('Could not load account details', 'error');
     content.innerHTML = `<div class="welcome"><p style="color:var(--red)">Failed to load account.</p></div>`;
   }
 }
 
-function renderDetail(account, transactions) {
+function renderDetail(account, transactions, delta) {
   const a = account;
 
   const txnsHtml = transactions.length === 0
@@ -152,6 +153,10 @@ function renderDetail(account, transactions) {
       <div class="balance-card">
         <span class="balance-label">Current Balance</span>
         <span class="balance-amount">${fmt(a.balance)}</span>
+        <div class="balance-delta ${delta >= 0 ? 'positive' : 'negative'}">
+          ${delta >= 0 ? icon.arrowUp : icon.arrowDown}
+          <span>${delta >= 0 ? '+' : ''}${fmt(delta)} past 30 days</span>
+        </div>
         <span class="balance-since">Member since ${new Date(a.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
       </div>
 
