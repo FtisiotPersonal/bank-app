@@ -1,0 +1,27 @@
+{
+  "name": "mybankapp",
+  "version": "1.0.0",
+  "description": "A simple banking application backed by Aiven PostgreSQL.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FtisiotPersonal/bank-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/FtisiotPersonal/bank-app/issues"
+  },
+  "homepage": "https://github.com/FtisiotPersonal/bank-app#readme",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "pg": "^8.22.0"
+  }
+}
