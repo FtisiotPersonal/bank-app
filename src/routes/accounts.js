@@ -134,6 +134,23 @@ router.post('/:id/transfer', async (req, res) => {
   }
 });
 
+// 30-day balance delta
+router.get('/:id/balance-delta', async (req, res) => {
+  const { rows: exists } = await db.query('SELECT id FROM accounts WHERE id = $1', [req.params.id]);
+  if (!exists.length) return res.status(404).json({ error: 'Account not found' });
+
+  const { rows } = await db.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN to_account_id = $1 THEN amount ELSE 0 END), 0) -
+       COALESCE(SUM(CASE WHEN from_account_id = $1 THEN amount ELSE 0 END), 0) AS delta
+     FROM transactions
+     WHERE (from_account_id = $1 OR to_account_id = $1)
+       AND created_at >= NOW() - INTERVAL '30 days'`,
+    [req.params.id]
+  );
+  res.json({ delta: parseFloat(rows[0].delta) });
+});
+
 // Transaction history for an account
 router.get('/:id/transactions', async (req, res) => {
   const { rows: exists } = await db.query('SELECT id FROM accounts WHERE id = $1', [req.params.id]);
