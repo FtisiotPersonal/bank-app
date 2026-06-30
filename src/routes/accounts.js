@@ -151,6 +151,50 @@ router.get('/:id/balance-delta', async (req, res) => {
   res.json({ delta: parseFloat(rows[0].delta) });
 });
 
+// Balance history for trend chart
+router.get('/:id/balance-history', async (req, res) => {
+  const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 90);
+
+  const { rows: acct } = await db.query('SELECT id, balance FROM accounts WHERE id = $1', [req.params.id]);
+  if (!acct.length) return res.status(404).json({ error: 'Account not found' });
+
+  const currentBalance = parseFloat(acct[0].balance);
+
+  const { rows } = await db.query(
+    `SELECT
+       (created_at AT TIME ZONE 'UTC')::date::text AS day,
+       SUM(CASE WHEN to_account_id = $1 THEN amount ELSE 0 END) -
+       SUM(CASE WHEN from_account_id = $1 THEN amount ELSE 0 END) AS net
+     FROM transactions
+     WHERE (from_account_id = $1 OR to_account_id = $1)
+       AND created_at >= NOW() - ($2 || ' days')::interval
+     GROUP BY 1
+     ORDER BY 1`,
+    [req.params.id, days]
+  );
+
+  const netByDay = {};
+  let totalNet = 0;
+  for (const r of rows) {
+    netByDay[r.day] = parseFloat(r.net);
+    totalNet += parseFloat(r.net);
+  }
+
+  const points = [];
+  const now = new Date();
+  let running = currentBalance - totalNet;
+
+  for (let i = days; i >= 0; i--) {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    running += (netByDay[key] || 0);
+    points.push({ date: key, balance: Math.round(running * 100) / 100 });
+  }
+
+  res.json(points);
+});
+
 // Transaction history for an account
 router.get('/:id/transactions', async (req, res) => {
   const { rows: exists } = await db.query('SELECT id FROM accounts WHERE id = $1', [req.params.id]);
