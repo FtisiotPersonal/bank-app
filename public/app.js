@@ -40,6 +40,14 @@ function fmt(n) {
 function fmtDate(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
+function fmtDateShort(iso) {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+function fmtK(n) {
+  if (Math.abs(n) >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
+  if (Math.abs(n) >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'k';
+  return '$' + Math.round(n);
+}
 function esc(s) {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -172,11 +180,140 @@ function renderDetail(account, transactions, delta) {
         </button>
       </div>
 
+      <div class="chart-section">
+        <div class="chart-header">
+          <h3 class="txns-title">Balance Trend</h3>
+          <div class="range-btns">
+            <button class="range-btn active" data-days="30" onclick="switchChartRange(this)">30d</button>
+            <button class="range-btn" data-days="60" onclick="switchChartRange(this)">60d</button>
+            <button class="range-btn" data-days="90" onclick="switchChartRange(this)">90d</button>
+          </div>
+        </div>
+        <div id="chart-container" class="chart-container"></div>
+      </div>
+
       <div class="txns-section">
         <h3 class="txns-title">Transaction History</h3>
         <div class="txns-list">${txnsHtml}</div>
       </div>
     </div>`;
+
+  loadAndRenderChart(a.id, 30);
+}
+
+// ─── Balance trend chart ──────────────────────────────────────
+const C = { vw: 600, vh: 210, ml: 62, mr: 16, mt: 12, mb: 38 };
+
+function renderChart(container, points) {
+  if (points.length < 2) {
+    container.innerHTML = '<div class="chart-empty">Not enough data to display</div>';
+    return;
+  }
+
+  const balances = points.map(p => p.balance);
+  const minB = Math.min(...balances);
+  const maxB = Math.max(...balances);
+  const spread = maxB - minB || Math.abs(maxB) * 0.1 || 100;
+  const yLo = minB - spread * 0.15;
+  const yHi = maxB + spread * 0.15;
+  const yRange = yHi - yLo;
+  const pw = C.vw - C.ml - C.mr;
+  const ph = C.vh - C.mt - C.mb;
+
+  const sx = i => C.ml + (i / (points.length - 1)) * pw;
+  const sy = b => C.mt + ph - ((b - yLo) / yRange) * ph;
+
+  const coords = points.map((p, i) => ({ x: sx(i), y: sy(p.balance), date: p.date, balance: p.balance }));
+
+  let linePath = `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`;
+  for (let i = 1; i < coords.length; i++) {
+    const p0 = coords[i - 1], p1 = coords[i];
+    const cpx = ((p0.x + p1.x) / 2).toFixed(1);
+    linePath += ` C ${cpx} ${p0.y.toFixed(1)}, ${cpx} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
+  }
+  const areaPath = `${linePath} L ${coords[coords.length - 1].x.toFixed(1)} ${(C.mt + ph).toFixed(1)} L ${coords[0].x.toFixed(1)} ${(C.mt + ph).toFixed(1)} Z`;
+
+  const yTicks = [0, 1, 2, 3, 4].map(i => ({ b: yLo + yRange * i / 4, y: sy(yLo + yRange * i / 4) }));
+  const xTicks = [0, 1, 2, 3, 4].map(i => {
+    const idx = Math.round(i * (points.length - 1) / 4);
+    return { date: points[idx].date, x: sx(idx) };
+  });
+
+  const uid = Math.random().toString(36).slice(2, 8);
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${C.vw} ${C.vh}" width="100%" height="210"
+         preserveAspectRatio="none" class="chart-svg" id="chart-svg-${uid}">
+      <defs>
+        <linearGradient id="grad-${uid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#22c55e" stop-opacity="0.2"/>
+          <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
+        </linearGradient>
+        <clipPath id="clip-${uid}">
+          <rect x="${C.ml}" y="${C.mt}" width="${pw}" height="${ph}"/>
+        </clipPath>
+      </defs>
+      ${yTicks.map(t => `<line x1="${C.ml}" y1="${t.y.toFixed(1)}" x2="${C.ml + pw}" y2="${t.y.toFixed(1)}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>`).join('')}
+      <path d="${areaPath}" fill="url(#grad-${uid})" clip-path="url(#clip-${uid})"/>
+      <path d="${linePath}" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" clip-path="url(#clip-${uid})"/>
+      ${yTicks.map(t => `<text x="${(C.ml - 8).toFixed(1)}" y="${(t.y + 4).toFixed(1)}" text-anchor="end" fill="#71717a" font-size="10" font-family="system-ui,sans-serif">${fmtK(t.b)}</text>`).join('')}
+      ${xTicks.map(t => `<text x="${t.x.toFixed(1)}" y="${(C.mt + ph + 26).toFixed(1)}" text-anchor="middle" fill="#71717a" font-size="10" font-family="system-ui,sans-serif">${fmtDateShort(t.date)}</text>`).join('')}
+      <g id="chart-tip-${uid}" opacity="0" pointer-events="none">
+        <line id="tt-vl-${uid}" x1="0" y1="${C.mt}" x2="0" y2="${C.mt + ph}" stroke="rgba(255,255,255,0.15)" stroke-width="1" stroke-dasharray="4 3"/>
+        <circle id="tt-dot-${uid}" r="4" fill="#22c55e" stroke="#09090b" stroke-width="2"/>
+        <rect id="tt-box-${uid}" rx="6" ry="6" fill="#1f1f23" stroke="rgba(255,255,255,0.12)" stroke-width="1" width="118" height="46"/>
+        <text id="tt-amt-${uid}" fill="#f4f4f5" font-size="12" font-weight="600" font-family="system-ui,sans-serif"/>
+        <text id="tt-dt-${uid}" fill="#a1a1aa" font-size="10" font-family="system-ui,sans-serif"/>
+      </g>
+      <rect x="${C.ml}" y="${C.mt}" width="${pw}" height="${ph}" fill="transparent" id="chart-ov-${uid}" style="cursor:crosshair"/>
+    </svg>`;
+
+  const svgEl = document.getElementById(`chart-svg-${uid}`);
+  const tip    = document.getElementById(`chart-tip-${uid}`);
+  const ttVl   = document.getElementById(`tt-vl-${uid}`);
+  const ttDot  = document.getElementById(`tt-dot-${uid}`);
+  const ttBox  = document.getElementById(`tt-box-${uid}`);
+  const ttAmt  = document.getElementById(`tt-amt-${uid}`);
+  const ttDt   = document.getElementById(`tt-dt-${uid}`);
+
+  document.getElementById(`chart-ov-${uid}`).addEventListener('mousemove', e => {
+    const rect = svgEl.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) / rect.width * C.vw;
+    const idx = Math.max(0, Math.min(coords.length - 1, Math.round((mx - C.ml) / pw * (coords.length - 1))));
+    const pt = coords[idx];
+    const bw = 118, bh = 46;
+    let tx = pt.x + 10;
+    if (tx + bw > C.vw - 4) tx = pt.x - bw - 10;
+    let ty = Math.max(C.mt + 4, pt.y - bh / 2);
+    if (ty + bh > C.mt + ph - 4) ty = C.mt + ph - bh - 4;
+
+    ttVl.setAttribute('x1', pt.x); ttVl.setAttribute('x2', pt.x);
+    ttDot.setAttribute('cx', pt.x); ttDot.setAttribute('cy', pt.y);
+    ttBox.setAttribute('x', tx); ttBox.setAttribute('y', ty);
+    ttAmt.setAttribute('x', tx + 10); ttAmt.setAttribute('y', ty + 18); ttAmt.textContent = fmt(pt.balance);
+    ttDt.setAttribute('x', tx + 10); ttDt.setAttribute('y', ty + 33); ttDt.textContent = fmtDateShort(pt.date);
+    tip.setAttribute('opacity', '1');
+  });
+
+  document.getElementById(`chart-ov-${uid}`).addEventListener('mouseleave', () => tip.setAttribute('opacity', '0'));
+}
+
+async function loadAndRenderChart(accountId, days) {
+  const container = document.getElementById('chart-container');
+  if (!container) return;
+  container.innerHTML = '<div class="chart-loading">Loading…</div>';
+  try {
+    const points = await api.get(`/accounts/${accountId}/balance-history?days=${days}`);
+    renderChart(container, points);
+  } catch {
+    container.innerHTML = '<div class="chart-empty">Could not load chart</div>';
+  }
+}
+
+function switchChartRange(btn) {
+  document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadAndRenderChart(selectedId, parseInt(btn.dataset.days, 10));
 }
 
 // ─── Modal ────────────────────────────────────────────────────
