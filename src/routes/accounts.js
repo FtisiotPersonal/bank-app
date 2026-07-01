@@ -153,7 +153,7 @@ router.get('/:id/balance-delta', async (req, res) => {
 
 // Balance history for trend chart
 router.get('/:id/balance-history', async (req, res) => {
-  const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 90);
+  const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 120);
 
   const { rows: acct } = await db.query('SELECT id, balance FROM accounts WHERE id = $1', [req.params.id]);
   if (!acct.length) return res.status(404).json({ error: 'Account not found' });
