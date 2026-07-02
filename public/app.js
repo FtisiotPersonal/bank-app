@@ -188,6 +188,7 @@ function renderDetail(account, transactions, delta) {
             <button class="range-btn" data-days="60" onclick="switchChartRange(this)">60d</button>
             <button class="range-btn" data-days="90" onclick="switchChartRange(this)">90d</button>
             <button class="range-btn" data-days="120" onclick="switchChartRange(this)">120d</button>
+            <button class="range-btn" data-days="360" onclick="switchChartRange(this)">360d</button>
           </div>
         </div>
         <div id="chart-container" class="chart-container"></div>
